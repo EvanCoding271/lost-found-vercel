@@ -138,10 +138,41 @@ async def items(request:Request,view:str='lost',q:str='',conn=Depends(get_db)):
         d=dict(r);d['place']=f"{r['building_name']} / {r['room_name']}";d['my_claim']=None;out.append(public_item(d,'lost',au['role'],sid))
     for r in fs:
         d=dict(r);d['place']=f"{r['building_name']} / {r['room_name']}";c=await conn.fetchrow("select claim_id,claim_status from public.claims where found_item_id=$1 and student_id=$2 order by claim_id desc limit 1",r['id'],sid);d['my_claim']={'ref':f"CLM-{c['claim_id']}",'status':c['claim_status']} if c else None;out.append(public_item(d,'found',au['role'],sid))
-    if view=='lost':out=[x for x in out if x['type']=='lost' and x['status']=='open']
-    elif view=='found':out=[x for x in out if x['type']=='found' and x['status']=='available']
-    elif view=='pending':out=[x for x in out if x['status'] in ('pending','reported','under_review','awaiting')]
-    elif view=='claimed':out=[x for x in out if x['status']=='released']
+    
+    if view == 'lost':
+    # Show reported missing items, including older open reports.
+        out = [
+            x for x in out
+            if x['type'] == 'lost'
+            and x['status'] in ('reported', 'open', 'under_review')
+        ]
+
+    elif view == 'found':
+        out = [
+            x for x in out
+            if x['type'] == 'found'
+            and x['status'] == 'available'
+        ]
+
+    elif view == 'pending':
+    # Include missing-item reports awaiting review.
+    # Also retain found items with claims under review.
+        out = [
+            x for x in out
+            if (
+                x['type'] == 'lost'
+                and x['status'] in ('reported', 'under_review', 'pending')
+            ) or (
+                x['type'] == 'found'
+                and x['status'] == 'pending'
+            )
+        ]
+
+    elif view == 'claimed':
+        out = [
+            x for x in out
+            if x['status'] == 'released'
+        ]
     elif view=='awaiting':
         if au['role']!='staff':raise HTTPException(403,'Staff access required')
         out=[x for x in out if x['type']=='found' and x['status']=='awaiting']
