@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+asyncpg
+python-dotenv
+python-multipart
+supabase
+itsdangerous
+pydantic[email]

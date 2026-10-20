@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Lost &amp; Found</title>
+  <meta name="description" content="Campus lost and found: sign in to report, search, and claim items.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <!-- Only a loading screen exists in the page. The login screen or the home page is built
+       by js/app.js after the session check, so signed-out visitors never get the home page. -->
+  <div id="app"><div class="splash" role="status">Loading&hellip;</div></div>
+
+  <!-- Load order matters: each file adds to the shared LF object. -->
+  <script src="js/config.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/mock.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/login.js"></script>
+  <script src="js/landing.js"></script>
+  <script src="js/overlays.js"></script>
+  <script src="js/staff.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
