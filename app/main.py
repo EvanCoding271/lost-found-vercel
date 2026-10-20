@@ -94,10 +94,11 @@ async def register(b: Register, conn=Depends(get_db)):
             "email": email,
             "password": b.password,
             "options": {
-                "email_redirect_to": FRONTEND_ORIGINS[0],
-                "data": {
-                    "full_name": full_name
-                }
+                "email_redirect_to": (
+                    f"{FRONTEND_ORIGINS[0].rstrip('/')}/verify-email.html"
+                    if FRONTEND_ORIGINS
+                    else None
+                ),
             }
         })
     except Exception:
