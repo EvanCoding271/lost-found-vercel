@@ -15,7 +15,13 @@ async def lifespan(app):
 app=FastAPI(title='Lost & Found API',version='3.0.0',lifespan=lifespan)
 app.add_middleware(CORSMiddleware,allow_origins=FRONTEND_ORIGINS or ['*'],allow_credentials=True,allow_methods=['*'],allow_headers=['*'])
 class Login(BaseModel): email:EmailStr; password:str
-class Register(BaseModel): fullName:str; email:EmailStr; studentId:int; password:str
+
+class Register(BaseModel):
+    fullName: str
+    email: EmailStr
+    studentId: str | int | None = None
+    password: str
+
 class Forgot(BaseModel): email:EmailStr
 class Receive(BaseModel): storage:str; details:str
 class Verify(BaseModel): outcome:str; rationale:str
@@ -48,19 +54,74 @@ async def logout():
     r=Response(status_code=204);clear_session(r);return r
 @app.get('/api/auth/me')
 async def me(request:Request,conn=Depends(get_db)):return {'user':await app_user(conn,await current_auth_user(request))}
-@app.post('/api/auth/register',status_code=201)
-async def register(b:Register,conn=Depends(get_db)):
-    if SCHOOL_EMAIL_DOMAIN and not str(b.email).lower().endswith('@'+SCHOOL_EMAIL_DOMAIN):raise HTTPException(422,'Use your school email address')
-    s=await conn.fetchrow('select student_id,student_email,auth_user_id from public.students where student_id=$1',b.studentId)
-    if not s:raise HTTPException(422,'Student ID was not found')
-    if s['auth_user_id']:raise HTTPException(409,'This student already has an account')
-    if s['student_email'].lower()!=str(b.email).lower():raise HTTPException(422,'Email does not match the student record')
-    try:r=supabase_admin.auth.admin.create_user({'email':str(b.email),'password':b.password,'email_confirm':True,'user_metadata':{'student_id':b.studentId,'role':'student'}})
-    except Exception as e:raise HTTPException(400,str(e))
-    await conn.execute('update public.students set auth_user_id=$1::uuid where student_id=$2',str(r.user.id),b.studentId)
-    # sign in so the existing frontend is immediately authenticated
-    sr=supabase_auth.auth.sign_in_with_password({'email':str(b.email),'password':b.password})
-    u=await app_user(conn,sr.user);out=JSONResponse({'user':u},status_code=201);set_session(out,sr.session.access_token,sr.session.refresh_token);return out
+
+@app.post("/api/auth/register", status_code=202)
+async def register(b: Register, conn=Depends(get_db)):
+    email = str(b.email).strip().lower()
+    full_name = " ".join(b.fullName.strip().split())
+
+    # Validate the name.
+    if len(full_name.split()) < 2:
+        raise HTTPException(
+            status_code=422,
+            detail="Please enter your first and last name."
+        )
+
+    # Validate the password.
+    if len(b.password) < 8:
+        raise HTTPException(
+            status_code=422,
+            detail="Password must be at least 8 characters."
+        )
+
+    # Require a configured school email domain.
+    if not SCHOOL_EMAIL_DOMAIN:
+        raise HTTPException(
+            status_code=503,
+            detail="School email registration is not configured."
+        )
+
+    # Match the exact email domain.
+    email_domain = email.rsplit("@", 1)[-1].lower()
+    if email_domain != SCHOOL_EMAIL_DOMAIN.lower():
+        raise HTTPException(
+            status_code=422,
+            detail="Please use your school email address."
+        )
+
+    try:
+        result = supabase_auth.auth.sign_up({
+            "email": email,
+            "password": b.password,
+            "options": {
+                "email_redirect_to": FRONTEND_ORIGINS[0],
+                "data": {
+                    "full_name": full_name
+                }
+            }
+        })
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Registration could not be completed. "
+                "Please check your details or try again later."
+            )
+        )
+
+    if not result.user:
+        raise HTTPException(
+            status_code=400,
+            detail="Registration could not be completed."
+        )
+
+    return {
+        "message": (
+            "Registration submitted. Please check your school "
+            "email for a confirmation link before logging in."
+        )
+    }
+
 @app.post('/api/auth/forgot',status_code=202)
 async def forgot(b:Forgot):
     try:supabase_auth.auth.reset_password_email(str(b.email))
