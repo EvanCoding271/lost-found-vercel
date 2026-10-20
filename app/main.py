@@ -157,7 +157,15 @@ async def report(request:Request,conn=Depends(get_db)):
     if typ not in ('lost','found'):raise HTTPException(422,'Invalid report type')
     try:item_date=date.fromisoformat(dt)
     except:raise HTTPException(422,'Invalid date')
-    c=await conn.fetchrow('select category_id from public.categories where category_name=$1',cat)
+    c = await conn.fetchrow(
+    """
+    SELECT category_id
+    FROM public.categories
+    WHERE LOWER(TRIM(category_name)) = LOWER(TRIM($1))
+    LIMIT 1
+    """,
+    cat
+    )
     if not c:raise HTTPException(422,'Invalid category')
     building,room=(place.split('/',1)+[''])[:2] if '/' in place else (place,'');loc=await conn.fetchrow('select location_id from public.locations where building_name=$1 and room_name=$2',building.strip(),room.strip())
     if not loc:loc=await conn.fetchrow('insert into public.locations(building_name,room_name) values($1,$2) returning location_id',building.strip(),room.strip())
