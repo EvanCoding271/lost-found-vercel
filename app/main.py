@@ -37,7 +37,17 @@ def ref(kind,id,when):return f'{kind}-{when.year}-{int(id):04d}'
 def public_item(r,kind,role,student_id=None):
     sensitive=r.get('category','').lower() in ('documents','personal accessories') and any(x in r['name'].lower() for x in ('id','card','wallet','passport','license'))
     status=r['status']
-    if kind=='found' and status=='unclaimed' and not r.get('received_at'):status='awaiting'
+    # Normalize database statuses to the public API statuses used by the UI.
+    # A found report is not claimable until staff records the physical item.
+    if kind == 'found':
+        if status == 'unclaimed' and not r.get('received_at'):
+            status = 'awaiting'
+        elif status == 'stored':
+            status = 'available'
+        elif status == 'matched':
+            status = 'pending'
+        elif status in ('claimed', 'returned'):
+            status = 'released'
     if sensitive and role!='staff':
         return {'id':str(r['id']),'ref':ref('LST' if kind=='lost' else 'FND',r['id'],r['created_at']),'type':kind,'name':'Sensitive item','category':r['category'],'description':'Identifying details are withheld for privacy.','place':None,'date':r['item_date'].isoformat(),'createdAt':r['created_at'].isoformat(),'photo':None,'status':status,'canClaim':False,'myClaim':None}
     return {'id':str(r['id']),'ref':ref('LST' if kind=='lost' else 'FND',r['id'],r['created_at']),'type':kind,'name':r['name'],'category':r['category'],'description':r['description'],'place':r['place'],'date':r['item_date'].isoformat(),'createdAt':r['created_at'].isoformat(),'photo':r['photo'],'status':status,'canClaim':kind=='found' and status=='available' and role=='student','myClaim':r.get('my_claim')}
@@ -138,41 +148,10 @@ async def items(request:Request,view:str='lost',q:str='',conn=Depends(get_db)):
         d=dict(r);d['place']=f"{r['building_name']} / {r['room_name']}";d['my_claim']=None;out.append(public_item(d,'lost',au['role'],sid))
     for r in fs:
         d=dict(r);d['place']=f"{r['building_name']} / {r['room_name']}";c=await conn.fetchrow("select claim_id,claim_status from public.claims where found_item_id=$1 and student_id=$2 order by claim_id desc limit 1",r['id'],sid);d['my_claim']={'ref':f"CLM-{c['claim_id']}",'status':c['claim_status']} if c else None;out.append(public_item(d,'found',au['role'],sid))
-    
-    if view == 'lost':
-    # Show reported missing items, including older open reports.
-        out = [
-            x for x in out
-            if x['type'] == 'lost'
-            and x['status'] in ('reported', 'open', 'under_review')
-        ]
-
-    elif view == 'found':
-        out = [
-            x for x in out
-            if x['type'] == 'found'
-            and x['status'] == 'available'
-        ]
-
-    elif view == 'pending':
-    # Include missing-item reports awaiting review.
-    # Also retain found items with claims under review.
-        out = [
-            x for x in out
-            if (
-                x['type'] == 'lost'
-                and x['status'] in ('reported', 'under_review', 'pending')
-            ) or (
-                x['type'] == 'found'
-                and x['status'] == 'pending'
-            )
-        ]
-
-    elif view == 'claimed':
-        out = [
-            x for x in out
-            if x['status'] == 'released'
-        ]
+    if view=='lost':out=[x for x in out if x['type']=='lost' and x['status']=='open']
+    elif view=='found':out=[x for x in out if x['type']=='found' and x['status']=='available']
+    elif view=='pending':out=[x for x in out if x['status']=='pending']
+    elif view=='claimed':out=[x for x in out if x['status']=='released']
     elif view=='awaiting':
         if au['role']!='staff':raise HTTPException(403,'Staff access required')
         out=[x for x in out if x['type']=='found' and x['status']=='awaiting']
@@ -212,7 +191,7 @@ async def claim(item_id:int,request:Request,conn=Depends(get_db)):
     f=await request.form();ev=str(f.get('evidence','')).strip();confirm=str(f.get('confirm','')).lower();photo=f.get('photo')
     if len(ev)<1 or confirm not in ('true','1','on','yes'):raise HTTPException(422,'Evidence and confirmation are required')
     found=await conn.fetchrow('select found_item_id,item_status from public.found_items where found_item_id=$1',item_id)
-    if not found or found['item_status'] not in ('stored','unclaimed'):raise HTTPException(409,'This item can no longer be claimed')
+    if not found or found['item_status'] != 'stored':raise HTTPException(409,'This item is not available to claim until staff receives it')
     existing=await conn.fetchrow("select claim_id from public.claims where found_item_id=$1 and student_id=$2 and claim_status in ('pending','approved')",item_id,au['studentId'])
     if existing:raise HTTPException(409,'You already have an active claim for this item')
     url=upload_photo(photo,'claims') if photo and hasattr(photo,'file') else None
