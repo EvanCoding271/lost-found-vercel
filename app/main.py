@@ -44,6 +44,8 @@ def public_item(r,kind,role,student_id=None):
         # the UI's Reported Lost view filters for the public status 'open'.
         if status == 'reported':
             status = 'open'
+        elif status == 'under_review':
+            status = 'pending'
     elif kind == 'found':
         if status == 'unclaimed' and not r.get('received_at'):
             status = 'awaiting'
@@ -207,11 +209,11 @@ async def staff_check(request,conn):
     return au
 @app.post('/api/lost-items/{item_id}/verification')
 async def verify_lost_item(item_id:int,request:Request,conn=Depends(get_db)):
-    """Staff review of a lost-item report. A verified report moves to Pending."""
+    """Staff review of a lost-item report. Store under_review and expose it as Pending."""
     au=await staff_check(request,conn)
     r=await conn.fetchrow("""update public.lost_items
-        set item_status='pending'
-        where lost_item_id=$1 and item_status in ('reported','open')
+        set item_status='under_review'
+        where lost_item_id=$1 and item_status='reported'
         returning lost_item_id""",item_id)
     if not r:
         exists=await conn.fetchval('select 1 from public.lost_items where lost_item_id=$1',item_id)
