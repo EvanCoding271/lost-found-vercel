@@ -74,7 +74,7 @@
       grid.replaceChildren.apply(grid, n);
     }
     function card(item) {
-      return h('button', { type: 'button', class: 'card', onclick: function () { (user.role === 'staff' && item.type === 'found' ? LF.overlays.staffItem : LF.overlays.item)(item, { user: user, onChanged: load }); } },
+      return h('button', { type: 'button', class: 'card', onclick: function () { (user.role === 'staff' ? (item.type === 'found' ? LF.overlays.staffItem : LF.overlays.staffLostItem) : LF.overlays.item)(item, { user: user, onChanged: load }); } },
         h('span', { class: 'thumb' },
           item.photo ? h('img', { src: item.photo, alt: '', loading: 'lazy' }) : h('span', { class: 'ph' }, LF.categoryIcon(item.category, 22)),
           state.view === 'mine' ? h('span', { class: 'badge' }, LF.statusChip(item.status)) : null),

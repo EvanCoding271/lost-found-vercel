@@ -127,6 +127,7 @@
     createClaim: function (itemId, fields, photo) { return request('POST', '/api/items/' + encodeURIComponent(itemId) + '/claims', { form: formOf(fields, photo) }); },
     register: function (b) { return request('POST', '/api/auth/register', { json: b, noExpire: true }); },
     staffItem: function (id) { return request('GET', '/api/items/' + encodeURIComponent(id) + '/staff'); },
+    verifyLostItem: function (id) { return request('POST', '/api/lost-items/' + encodeURIComponent(id) + '/verification'); },
     receiveItem: function (id, b) { return request('POST', '/api/items/' + encodeURIComponent(id) + '/receive', { json: b }); },
     verifyClaim: function (claimRef, b) { return request('POST', '/api/claims/' + encodeURIComponent(claimRef) + '/verification', { json: b }); },
     releaseItem: function (id, b) { return request('POST', '/api/items/' + encodeURIComponent(id) + '/release', { json: b }); }

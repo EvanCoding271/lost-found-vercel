@@ -11,6 +11,35 @@
 
   function kv(label, value, mono) { return h('div', { class: 'kv' }, h('span', null, label), h('span', { class: mono ? 'mono' : '' }, value || 'Not given')); }
 
+  LF.overlays.staffLostItem = function (item, o) {
+    var changed = false;
+    var m = LF.overlay({ title: 'Review lost report (staff)', className: 'dlg-staff', onClose: function () { if (changed && o.onChanged) o.onChanged(); } });
+    var sub = [item.place, LF.fmtDate(item.date)].filter(Boolean).join(' · ');
+    var body = h('div', { class: 'staff-body' },
+      h('div', { class: 'staff-head' },
+        h('div', { class: 'staff-photo' }, item.photo ? h('img', { src: item.photo, alt: item.name }) : h('span', { class: 'ph' }, LF.categoryIcon(item.category, 32))),
+        h('div', { class: 'info' }, LF.statusChip(item.status), h('h3', { class: 'heading' }, item.name), h('p', { class: 'subheading' }, sub),
+          item.description ? h('p', { class: 'desc' }, item.description) : null,
+          h('p', { class: 'muted mono', style: { fontSize: '0.8rem' } }, item.ref + ' · Reported ' + LF.fmtDateTime(item.createdAt)))),
+      h('div', { class: 'staff-section' },
+        h('h3', null, 'Verify report'),
+        h('p', { class: 'muted' }, 'Check that the report contains enough information and appears legitimate. Verifying it moves it to Pending for follow-up.'),
+        item.status === 'open'
+          ? h('button', { type: 'button', class: 'btn yellow', onclick: function () {
+              var btn = this;
+              LF.busy(btn, true);
+              LF.api.verifyLostItem(item.id).then(function (r) {
+                LF.busy(btn, false, 'Verify report and move to Pending');
+                if (!r.ok) return LF.toast(r.error);
+                changed = true; item.status = 'pending'; LF.toast('Lost report verified and moved to Pending.');
+                body.replaceChildren(h('div', { class: 'callout' }, LF.icon('check', 18), h('div', null, 'Report verified. It is now in Pending.')));
+              });
+            } }, 'Verify report and move to Pending')
+          : h('div', { class: 'callout' }, LF.icon('info', 18), h('div', null, item.status === 'pending' ? 'This report has already been verified and is Pending.' : 'This report is not awaiting verification.'))));
+    m.body.append(body);
+    m.focusFirst();
+  };
+
   LF.overlays.staffItem = function (item, o) {
     var changed = false;
     var m = LF.overlay({ title: 'Item information (personnel)', className: 'dlg-staff', onClose: function () { if (changed && o.onChanged) o.onChanged(); } });

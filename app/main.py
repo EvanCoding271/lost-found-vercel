@@ -205,6 +205,20 @@ async def staff_check(request,conn):
     au=await app_user(conn,await current_auth_user(request))
     if au['role']!='staff':raise HTTPException(403,'Staff access required')
     return au
+@app.post('/api/lost-items/{item_id}/verification')
+async def verify_lost_item(item_id:int,request:Request,conn=Depends(get_db)):
+    """Staff review of a lost-item report. A verified report moves to Pending."""
+    au=await staff_check(request,conn)
+    r=await conn.fetchrow("""update public.lost_items
+        set item_status='pending'
+        where lost_item_id=$1 and item_status in ('reported','open')
+        returning lost_item_id""",item_id)
+    if not r:
+        exists=await conn.fetchval('select 1 from public.lost_items where lost_item_id=$1',item_id)
+        if not exists: raise HTTPException(404,'Lost report not found')
+        raise HTTPException(409,'This lost report has already been reviewed or cannot be reviewed in its current status')
+    return {'item':{'id':str(item_id),'type':'lost','status':'pending'}}
+
 @app.get('/api/items/{item_id}/staff')
 async def staff_item(item_id:int,request:Request,conn=Depends(get_db)):
     au=await staff_check(request,conn);r=await conn.fetchrow('''select f.*,c.category_name,loc.building_name,loc.room_name from public.found_items f join public.categories c on c.category_id=f.category_id join public.locations loc on loc.location_id=f.location_id where f.found_item_id=$1''',item_id)
