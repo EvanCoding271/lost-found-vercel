@@ -192,6 +192,14 @@
       LF.api.register({ fullName: fn.value.trim(), email: email, studentId: sid.value.trim(), password: pw.input.value }).then(function (r) {
         LF.busy(submit, false, 'Create account');
         if (!r.ok) return LF.showErrors(form, r);
+        // Registration uses email confirmation and returns a message, not a
+        // signed-in user/session. Do not dereference r.data.user or attempt to
+        // sign the new account in until the person confirms their email.
+        if (!r.data || !r.data.user) {
+          m.close();
+          LF.toast((r.data && r.data.message) || 'Registration submitted. Check your school email for a confirmation link.');
+          return;
+        }
         m.close(); LF.toast('Account created. Welcome, ' + r.data.user.fullName + '.'); o.onSignedIn(r.data.user);
       });
     } }, LF.formError(),

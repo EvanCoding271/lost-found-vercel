@@ -13,7 +13,7 @@
      GET  /api/auth/me       -> 200 { user } | 401
      POST /api/auth/forgot   { email } -> 202 (always, so nobody can test which emails exist)
      POST /api/auth/register { fullName, email, studentId, password }   (students only)
-          201 { user } and signs the student in | 409 { error } email taken | 422 { error, errors }
+          202 { message } and sends email confirmation | 400/422 { error or detail }
           Accept school-issued emails only (see schoolEmailDomain in config.js) and re-check on the server.
      user = { id, role: 'student' | 'staff', fullName, email, studentId? }
      One sign-in for everyone. The server decides the role from the account and returns it in user.role.
