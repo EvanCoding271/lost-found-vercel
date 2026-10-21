@@ -3,3 +3,4 @@
 __pycache__/
 *.pyc
 .vercel/
+schema_registration_auto_profile.sql

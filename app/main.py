@@ -151,6 +151,72 @@ async def register(b: Register, conn=Depends(get_db)):
             detail="Registration could not be completed."
         )
 
+    # Ensure every successfully created Auth account has a student profile.
+    # Prefer linking an existing roster/profile row by school student ID or
+    # email; otherwise create a new row. The trigger migration shipped with
+    # this project follows the same rule, so this also covers older deployments.
+    name_parts = full_name.split()
+    first_name = name_parts[0]
+    last_name = name_parts[-1]
+    middle_name = " ".join(name_parts[1:-1]) or None
+    auth_user_id = str(result.user.id)
+    try:
+        async with conn.transaction():
+            existing = await conn.fetchrow(
+                """
+                SELECT student_id, auth_user_id
+                FROM public.students
+                WHERE school_student_id = $1
+                   OR lower(student_email) = lower($2)
+                ORDER BY (school_student_id = $1) IS TRUE DESC
+                LIMIT 1
+                FOR UPDATE
+                """,
+                school_student_id,
+                email,
+            )
+            if existing:
+                if existing["auth_user_id"] and str(existing["auth_user_id"]) != auth_user_id:
+                    raise ValueError("This student ID or school email is already linked to another account.")
+                await conn.execute(
+                    """
+                    UPDATE public.students
+                    SET first_name = $1,
+                        last_name = $2,
+                        middle_name = $3,
+                        student_email = $4,
+                        auth_user_id = $5::uuid,
+                        school_student_id = $6
+                    WHERE student_id = $7
+                    """,
+                    first_name, last_name, middle_name, email,
+                    auth_user_id, school_student_id, existing["student_id"],
+                )
+            else:
+                await conn.execute(
+                    """
+                    INSERT INTO public.students (
+                        first_name, last_name, middle_name, student_email,
+                        auth_user_id, school_student_id, student_id_verified
+                    )
+                    VALUES ($1, $2, $3, $4, $5::uuid, $6, false)
+                    ON CONFLICT (auth_user_id) DO NOTHING
+                    """,
+                    first_name, last_name, middle_name, email,
+                    auth_user_id, school_student_id,
+                )
+    except Exception as exc:
+        # Auth may already have created the account; report the profile issue
+        # clearly rather than pretending registration fully succeeded.
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Your authentication account was created, but the student "
+                "profile could not be saved. Please contact the administrator "
+                "before trying to register again."
+            ),
+        ) from exc
+
     return {
         "message": (
             "Registration submitted. Please check your school "
