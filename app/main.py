@@ -270,7 +270,7 @@ async def verify(claim_ref:str,b:Verify,request:Request,conn=Depends(get_db)):
     try:cid=int(claim_ref[4:]) if claim_ref.startswith('CLM-') else 0
     except:cid=0
     if not cid or b.outcome not in ('approved','rejected') or len(b.rationale.strip())<10:raise HTTPException(422,'Valid outcome and rationale are required')
-    c=await conn.fetchrow("update public.claims set claim_status=$2,date_reviewed=now(),admin_remarks=$3,reviewed_by_admin_id=$4 where claim_id=$1 and claim_status='pending' returning claim_id,found_item_id,lost_item_id,claim_status,date_reviewed,admin_remarks",cid,b.outcome,b.rationale,au['id'])
+    c=await conn.fetchrow("update public.claims set claim_status=$2,date_reviewed=now(),admin_remarks=$3,reviewed_by_admin_id=$4 where claim_id=$1 and claim_status='pending' returning claim_id,found_item_id,lost_item_id,claim_status,date_reviewed,admin_remarks",cid,b.outcome,b.rationale,int(au['id']))
     if not c:raise HTTPException(409,'Claim was already decided or not found')
     if c['lost_item_id'] is not None:
         # A lost report remains under_review while staff decides who owns it.
@@ -296,6 +296,6 @@ async def release(item_id:int,b:Release,request:Request,conn=Depends(get_db)):
         return {'item':{'id':str(item_id),'type':'lost','status':'released'}}
     if c['found_item_id']!=item_id:raise HTTPException(404,'Claim does not belong to this found item')
     await conn.execute("update public.found_items set item_status='claimed' where found_item_id=$1",item_id)
-    await conn.execute("insert into public.returns(found_item_id,admin_id,admin_remarks) values($1,$2,$3) on conflict(found_item_id) do update set admin_id=excluded.admin_id,admin_remarks=excluded.admin_remarks,date_returned=now()",item_id,au['id'],'Released against approved claim')
+    await conn.execute("insert into public.returns(found_item_id,admin_id,admin_remarks) values($1,$2,$3) on conflict(found_item_id) do update set admin_id=excluded.admin_id,admin_remarks=excluded.admin_remarks,date_returned=now()",item_id,int(au['id']),'Released against approved claim')
     return {'item':{'id':str(item_id),'type':'found','status':'released'}}
 
