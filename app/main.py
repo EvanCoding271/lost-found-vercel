@@ -39,7 +39,12 @@ def public_item(r,kind,role,student_id=None):
     status=r['status']
     # Normalize database statuses to the public API statuses used by the UI.
     # A found report is not claimable until staff records the physical item.
-    if kind == 'found':
+    if kind == 'lost':
+        # New lost reports are stored in the database as 'reported', while
+        # the UI's Reported Lost view filters for the public status 'open'.
+        if status == 'reported':
+            status = 'open'
+    elif kind == 'found':
         if status == 'unclaimed' and not r.get('received_at'):
             status = 'awaiting'
         elif status == 'stored':
