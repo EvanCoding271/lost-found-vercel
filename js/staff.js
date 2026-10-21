@@ -11,34 +11,7 @@
 
   function kv(label, value, mono) { return h('div', { class: 'kv' }, h('span', null, label), h('span', { class: mono ? 'mono' : '' }, value || 'Not given')); }
 
-  LF.overlays.staffLostItem = function (item, o) {
-    var changed = false;
-    var m = LF.overlay({ title: 'Review lost report (staff)', className: 'dlg-staff', onClose: function () { if (changed && o.onChanged) o.onChanged(); } });
-    var sub = [item.place, LF.fmtDate(item.date)].filter(Boolean).join(' · ');
-    var body = h('div', { class: 'staff-body' },
-      h('div', { class: 'staff-head' },
-        h('div', { class: 'staff-photo' }, item.photo ? h('img', { src: item.photo, alt: item.name }) : h('span', { class: 'ph' }, LF.categoryIcon(item.category, 32))),
-        h('div', { class: 'info' }, LF.statusChip(item.status), h('h3', { class: 'heading' }, item.name), h('p', { class: 'subheading' }, sub),
-          item.description ? h('p', { class: 'desc' }, item.description) : null,
-          h('p', { class: 'muted mono', style: { fontSize: '0.8rem' } }, item.ref + ' · Reported ' + LF.fmtDateTime(item.createdAt)))),
-      h('div', { class: 'staff-section' },
-        h('h3', null, 'Verify report'),
-        h('p', { class: 'muted' }, 'Check that the report contains enough information and appears legitimate. Verifying it moves it to Pending for follow-up.'),
-        item.status === 'open'
-          ? h('button', { type: 'button', class: 'btn yellow', onclick: function () {
-              var btn = this;
-              LF.busy(btn, true);
-              LF.api.verifyLostItem(item.id).then(function (r) {
-                LF.busy(btn, false, 'Verify report and move to Pending');
-                if (!r.ok) return LF.toast(r.error);
-                changed = true; item.status = 'pending'; LF.toast('Lost report verified and moved to Pending.');
-                body.replaceChildren(h('div', { class: 'callout' }, LF.icon('check', 18), h('div', null, 'Report verified. It is now in Pending.')));
-              });
-            } }, 'Verify report and move to Pending')
-          : h('div', { class: 'callout' }, LF.icon('info', 18), h('div', null, item.status === 'pending' ? 'This report has already been verified and is Pending.' : 'This report is not awaiting verification.'))));
-    m.body.append(body);
-    m.focusFirst();
-  };
+  LF.overlays.staffLostItem = function (item, o) { return LF.overlays.staffItem(item, o); };
 
   LF.overlays.staffItem = function (item, o) {
     var changed = false;
@@ -57,7 +30,7 @@
 
     function load() {
       body.replaceChildren(head(item), h('p', { class: 'muted', role: 'status' }, 'Loading…'));
-      LF.api.staffItem(item.id).then(function (r) {
+      LF.api.staffItem(item.id, item.type).then(function (r) {
         if (!r.ok) return body.replaceChildren(head(item), h('div', { class: 'form-error', role: 'alert' }, r.error));
         draw(r.data);
       });
@@ -66,14 +39,26 @@
     function draw(d) {
       item = d.item;
       var out = [head(item)];
-      if (item.type === 'lost') out.push(h('div', { class: 'callout' }, LF.icon('info', 18), h('div', null, 'This is a lost report. Claims are only made on found items.')));
-      else if (item.status === 'awaiting') out.push(intake());
-      else {
+      if (item.type === 'lost' && item.status === 'open') out.push(verifyLostSection());
+      if (item.type === 'found' && item.status === 'awaiting') out.push(intake());
+      else if (item.type === 'found' || item.status !== 'open') {
         if (d.record) out.push(h('div', { class: 'staff-panel' }, h('h3', null, 'Recorded at intake (staff only)'),
           kv('Stored at', d.record.storage), kv('Identifying details', d.record.details), kv('Received', d.record.receivedBy + ', ' + LF.fmtDateTime(d.record.receivedAt))));
         out.push(claimsSection(d.claims));
       }
       body.replaceChildren.apply(body, out);
+    }
+
+    function verifyLostSection() {
+      var btn = h('button', { type: 'button', class: 'btn yellow', onclick: function () {
+        LF.busy(btn, true);
+        LF.api.verifyLostItem(item.id).then(function (r) {
+          LF.busy(btn, false, 'Verify report and allow ownership claims');
+          if (!r.ok) return LF.toast(r.error);
+          changed = true; LF.toast('Report verified. Students can now submit ownership claims.'); load();
+        });
+      } }, 'Verify report and allow ownership claims');
+      return h('div', { class: 'staff-section' }, h('h3', null, 'Verify lost report'), h('p', { class: 'muted' }, 'After verification, students can submit an ownership claim with a description and photo proof. Their requests will appear below for review.'), btn);
     }
 
     /* ----- 1. intake ----- */
@@ -140,12 +125,12 @@
     function claimsSection(claims) {
       var approved = claims.filter(function (c) { return c.status === 'approved'; });
       var parts = [h('h3', null, 'Claims (' + claims.length + ')')];
-      parts.push(claims.length ? h('div', { class: 'compare' }, claims.map(claimCol)) : h('p', { class: 'muted' }, 'No claims yet. Students can claim this item from the Found tab.'));
+      parts.push(claims.length ? h('div', { class: 'compare' }, claims.map(claimCol)) : h('p', { class: 'muted' }, 'No claims yet. Students can submit an ownership claim after this report is verified.'));
       if (item.status === 'released') parts.push(h('div', { class: 'callout' }, LF.icon('check', 18), h('div', null, 'Released to ' + (approved[0] ? approved[0].claimant.fullName : 'its owner') + '.')));
       else {
         var btn = h('button', { type: 'button', class: 'btn yellow', disabled: !approved.length, onclick: function () {
           LF.busy(btn, true);
-          LF.api.releaseItem(item.id, { claimRef: approved[0].ref }).then(function (r) {
+          LF.api.releaseItem(item.id, { claimRef: approved[0].ref, itemType: item.type }).then(function (r) {
             LF.busy(btn, false, 'Release to owner');
             if (!r.ok) return LF.toast(r.error);
             changed = true; LF.toast('Item released to ' + approved[0].claimant.fullName + '.'); load();

@@ -23,8 +23,8 @@
           200 { items: [item] }
           lost     open lost reports
           found    found items that staff have recorded and that can be claimed
-          pending  found items with at least one claim under review
-          claimed  items already released to their owner (item status 'released')
+          pending  verified lost reports and found items with claims under review
+          claimed  found items and lost reports already released to their owner
           awaiting (personnel only) found reports not yet received at the office
           mine     everything the signed-in person reported or claimed, in any status
      item = {
@@ -52,11 +52,11 @@
      A found report starts as status 'awaiting' until staff receive the item.
 
    CLAIMS (the [Claim] button), multipart/form-data
-     POST /api/items/:id/claims   fields: evidence, confirm ('true'), photo (optional image file)
+     POST /api/items/:id/claims   fields: itemType, evidence, confirm ('true'), photo (optional for found; required for lost), lostWhen/lostWhere (required for lost)
           201 { claim: { ref, status: 'pending' } }
           409 { error }                you already claimed this item, or it can no longer be claimed
           422 { error, errors: { evidence?, confirm?, photo? } }
-     Students only. A second pending claim puts the item under dispute for staff to compare.
+     Students only. Lost reports can be claimed only after staff verifies them; claims require description, when/where lost, and photo proof. Found-item claims retain the existing intake workflow.
 
    PERSONNEL ONLY (server must return 403 to students on all of these)
      GET  /api/items/:id/staff   -> 200 { item, record, claims }
@@ -124,9 +124,9 @@
     forgot: function (b) { return request('POST', '/api/auth/forgot', { json: b, noExpire: true }); },
     listItems: function (q) { return request('GET', '/api/items', { query: { view: q.view, q: q.q } }); },
     createReport: function (fields, photo) { return request('POST', '/api/reports', { form: formOf(fields, photo) }); },
-    createClaim: function (itemId, fields, photo) { return request('POST', '/api/items/' + encodeURIComponent(itemId) + '/claims', { form: formOf(fields, photo) }); },
+    createClaim: function (itemId, fields, photo, itemType) { fields.itemType = itemType || 'found'; return request('POST', '/api/items/' + encodeURIComponent(itemId) + '/claims', { form: formOf(fields, photo) }); },
     register: function (b) { return request('POST', '/api/auth/register', { json: b, noExpire: true }); },
-    staffItem: function (id) { return request('GET', '/api/items/' + encodeURIComponent(id) + '/staff'); },
+    staffItem: function (id, kind) { return request('GET', '/api/items/' + encodeURIComponent(id) + '/staff', { query: { kind: kind || 'found' } }); },
     verifyLostItem: function (id) { return request('POST', '/api/lost-items/' + encodeURIComponent(id) + '/verification'); },
     receiveItem: function (id, b) { return request('POST', '/api/items/' + encodeURIComponent(id) + '/receive', { json: b }); },
     verifyClaim: function (claimRef, b) { return request('POST', '/api/claims/' + encodeURIComponent(claimRef) + '/verification', { json: b }); },

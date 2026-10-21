@@ -102,9 +102,12 @@
     var sub = [item.type === 'lost' ? 'Lost' : 'Found', item.place, LF.fmtDate(item.date)].filter(Boolean).join(' · ');
 
     function action() {
-      if (item.myClaim) return h('div', { class: 'callout' }, LF.icon('check', 18), h('div', null, 'You claimed this item. Reference ', h('span', { class: 'mono' }, item.myClaim.ref), '. Staff are reviewing it.'));
+      if (item.myClaim) return h('div', { class: 'callout' }, LF.icon('check', 18), h('div', null, item.myClaim.status === 'approved' ? 'Your claim is approved and is awaiting release. Reference ' : 'Your claim was submitted and is awaiting staff review. Reference ', h('span', { class: 'mono' }, item.myClaim.ref), '.'));
       if (item.canClaim) return h('button', { type: 'button', class: 'btn', onclick: showClaim }, 'Claim');
-      if (item.type === 'lost') return h('div', { class: 'callout' }, LF.icon('info', 18), h('div', null, 'Found this? Hand it in to the Lost & Found office and press Report to add a found report.'));
+      if (item.type === 'lost' && item.status === 'open') return h('div', { class: 'callout' }, LF.icon('info', 18), h('div', null, 'Staff must verify this lost report before students can submit ownership claims.'));
+      if (item.type === 'lost' && item.status === 'released') return h('div', { class: 'callout' }, LF.icon('check', 18), h('div', null, 'This report has been marked as claimed and released to its owner.'));
+      if (item.type === 'lost' && item.status === 'pending') return h('div', { class: 'callout' }, LF.icon('info', 18), h('div', null, 'This report has been verified. If this is your item, press Claim and provide evidence of ownership.'));
+      if (item.type === 'lost') return null;
       if (item.status === 'released') return h('div', { class: 'callout' }, LF.icon('info', 18), h('div', null, 'This item was returned to its owner.'));
       if (item.status === 'awaiting') return h('div', { class: 'callout yellow' }, LF.icon('info', 18), h('div', null, 'Waiting for the item to be handed in to the office.'));
       if (o.user.role === 'staff') return h('div', { class: 'callout' }, LF.icon('info', 18), h('div', null, 'Students submit claims here. Personnel review them.'));
@@ -118,7 +121,9 @@
     }
 
     function showClaim() {
-      var evidence = LF.textarea('c-evidence', { placeholder: 'Serial number, marks, lock screen, what is inside' });
+      var evidence = LF.textarea('c-evidence', { rows: 4, placeholder: item.type === 'lost' ? 'Describe the item and identifying details only the owner would know.' : 'Serial number, marks, lock screen, what is inside' });
+      var lostWhen = item.type === 'lost' ? LF.input('c-lost-when', { placeholder: 'e.g. Monday after class' }) : null;
+      var lostWhere = item.type === 'lost' ? LF.input('c-lost-where', { placeholder: 'e.g. Library, second floor' }) : null;
       var chk = h('input', { type: 'checkbox', id: 'c-confirm' });
       var photo = LF.photoField({ id: 'c-photo' });
       var submit = h('button', { type: 'submit', class: 'btn' }, 'Submit claim');
@@ -126,11 +131,14 @@
         e.preventDefault();
         var errs = {};
         if (evidence.value.trim().length < 10) errs.evidence = 'Describe at least one detail only the owner would know (at least 10 characters).';
+        if (item.type === 'lost' && lostWhen.value.trim().length < 2) errs.lostWhen = 'Tell us when you last had the item.';
+        if (item.type === 'lost' && lostWhere.value.trim().length < 2) errs.lostWhere = 'Tell us where you lost the item.';
+        if (item.type === 'lost' && !photo.getFile()) errs.photo = 'Attach a photo to help prove the item is yours.';
         if (!chk.checked) errs.confirm = 'Confirm that the item is yours.';
         if (Object.keys(errs).length) return LF.showErrors(form, { ok: false, error: 'Please fix the highlighted fields.', errors: errs });
         LF.showErrors(form, { ok: true });
         LF.busy(submit, true);
-        LF.api.createClaim(item.id, { evidence: evidence.value.trim(), confirm: 'true' }, photo.getFile()).then(function (r) {
+        LF.api.createClaim(item.id, { evidence: evidence.value.trim(), lostWhen: lostWhen ? lostWhen.value.trim() : '', lostWhere: lostWhere ? lostWhere.value.trim() : '', confirm: 'true' }, photo.getFile(), item.type).then(function (r) {
           LF.busy(submit, false, 'Submit claim');
           if (!r.ok) return LF.showErrors(form, r);
           showDone(r.data.claim);
@@ -138,9 +146,11 @@
         });
       } },
         LF.formError(),
-        LF.field({ id: 'c-evidence', name: 'evidence', label: 'What only the owner would know', control: evidence, required: true,
-          hint: 'Staff compare this with what they recorded when the item arrived. Do not guess.' }),
-        photo.el,
+        LF.field({ id: 'c-evidence', name: 'evidence', label: item.type === 'lost' ? 'Describe the item and proof it is yours' : 'What only the owner would know', control: evidence, required: true,
+          hint: item.type === 'lost' ? 'Staff will review this description along with when/where you lost it and your photo.' : 'Staff compare this with what they recorded when the item arrived. Do not guess.' }),
+        item.type === 'lost' ? LF.field({ id: 'c-lost-when', name: 'lostWhen', label: 'When did you last have or lose it?', control: lostWhen, required: true }) : null,
+        item.type === 'lost' ? LF.field({ id: 'c-lost-where', name: 'lostWhere', label: 'Where did you lose it?', control: lostWhere, required: true }) : null,
+        h('label', { for: 'c-photo' }, item.type === 'lost' ? 'Photo proof (required)' : 'Photo proof (optional)'), photo.el,
         h('div', { class: 'field', 'data-field': 'confirm' }, h('label', { class: 'check', for: 'c-confirm' }, chk, h('span', null, 'I confirm this item belongs to me.')), h('div', { class: 'field-error', role: 'alert' })),
         h('div', { class: 'form-actions' }, submit, h('button', { type: 'button', class: 'btn secondary', onclick: showInfo }, 'Back')));
       info.replaceChildren(h('h3', { class: 'heading' }, 'Claim ' + item.name), form);
@@ -223,7 +233,7 @@
     m.body.append(h('div', { class: 'stack', style: { display: 'flex', flexDirection: 'column', gap: '20px' } },
       h('ol', { class: 'steps' },
         h('li', null, h('div', null, h('strong', null, 'Report it'), h('span', { class: 'muted' }, 'Lost something or found something? Press Report and describe it. Add a photo if you have one.'))),
-        h('li', null, h('div', null, h('strong', null, 'Claim it'), h('span', { class: 'muted' }, 'Find your item under Found and press Claim. Describe details only the owner would know. Those details are never shown to other students.'))),
+        h('li', null, h('div', null, h('strong', null, 'Claim it'), h('span', { class: 'muted' }, 'Once staff verifies a lost report, press Claim on it and provide the description, when/where you lost it, and photo proof. Staff review claims privately before release.'))),
         h('li', null, h('div', null, h('strong', null, 'Collect it'), h('span', { class: 'muted' }, 'Staff compare every claim with their records. When yours is approved, bring your school ID to the office.')))),
       h('div', { class: 'callout yellow' }, LF.icon('info', 18), h('div', null, 'Items are kept for 30 days. High-value items such as phones, laptops and wallets are kept for 90 days.'))));
     m.focusFirst();
