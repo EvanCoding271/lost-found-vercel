@@ -277,7 +277,23 @@ async def report(request:Request,conn=Depends(get_db)):
     if typ=='lost':
         if au['role']!='student':raise HTTPException(422,'A staff account cannot own a lost report')
         r=await conn.fetchrow('insert into public.lost_items(student_id,category_id,location_id,item_name,item_description,date_lost,photo_url) values($1,$2,$3,$4,$5,$6,$7) returning lost_item_id,date_reported',au['studentId'],c['category_id'],loc['location_id'],name,desc,item_date,url);d={'id':r['lost_item_id'],'name':name,'description':desc,'category':cat,'item_date':item_date,'created_at':r['date_reported'],'status':'reported','place':f'{building.strip()} / {room.strip()}','photo':url,'my_claim':None};return {'report':public_item(d,'lost',au['role'],au.get('studentId'))}
-    sid=au.get('studentId');r=await conn.fetchrow('insert into public.found_items(student_id,category_id,location_id,item_name,item_description,date_found,item_status,photo_url,on_behalf_of) values($1,$2,$3,$4,$5,$6,\'unclaimed\',$7,$8) returning found_item_id,date_submitted',sid,c['category_id'],loc['location_id'],name,desc,item_date,url,str(f.get('onBehalfOf','')).strip() or None);d={'id':r['found_item_id'],'name':name,'description':desc,'category':cat,'item_date':item_date,'created_at':r['date_submitted'],'status':'unclaimed','received_at':None,'place':f'{building.strip()} / {room.strip()}','photo':url,'my_claim':None};return {'report':public_item(d,'found',au['role'],au.get('studentId'))}
+    sid=au.get('studentId')
+    # Staff are reporting items already in their custody, so publish them as
+    # stored/available immediately. Student-submitted found reports remain
+    # unclaimed until staff records receipt.
+    initial_status = 'stored' if au['role'] == 'staff' else 'unclaimed'
+    r=await conn.fetchrow(
+        """INSERT INTO public.found_items(
+            student_id, category_id, location_id, item_name, item_description,
+            date_found, item_status, photo_url, on_behalf_of, received_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,
+            CASE WHEN $7 = 'stored' THEN now() ELSE NULL END
+        ) RETURNING found_item_id, date_submitted, received_at""",
+        sid, c['category_id'], loc['location_id'], name, desc, item_date,
+        initial_status, url, str(f.get('onBehalfOf','')).strip() or None
+    )
+    d={'id':r['found_item_id'],'name':name,'description':desc,'category':cat,'item_date':item_date,'created_at':r['date_submitted'],'status':initial_status,'received_at':r['received_at'],'place':f'{building.strip()} / {room.strip()}','photo':url,'my_claim':None}
+    return {'report':public_item(d,'found',au['role'],au.get('studentId'))}
 @app.post('/api/items/{item_id}/claims',status_code=201)
 async def claim(item_id:int,request:Request,conn=Depends(get_db)):
     au=await app_user(conn,await current_auth_user(request))
